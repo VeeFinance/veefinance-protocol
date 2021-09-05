@@ -1,7 +1,12 @@
 Vee Finance Protocol
 =================
 
-Vee.Finance is a DeFi lending platform for both traditional finance and crypto users, and dedicates itself to bridging the gap between traditional finance and DeFi by providing users with better digital asset management services. Users can participate in deposits, lending, and long and short positions. On the deposits side, the threshold for traditional financial users to participate in DeFi is lowered through a more user-friendly product experience; on the lending side, through the addition of options for DEX and the first-of-its-kind leveraged trading function, capital efficiency has been greatly improved.
+Vee.Finance is a DeFi lending platform for both traditional finance and crypto users, and dedicates itself to bridging the gap between traditional finance and DeFi by providing users with better digital asset management services. 
+
+Users can participate in deposits, lending, and long and short positions. 
+
+* On the deposits side, the threshold for traditional financial users to participate in DeFi is lowered through a more user-friendly product experience; 
+* on the lending side, through the addition of options for DEX and the first-of-its-kind leveraged trading function, capital efficiency has been greatly improved.
 
 Contributing
 ============
