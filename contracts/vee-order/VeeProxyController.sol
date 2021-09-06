@@ -57,7 +57,7 @@ contract VeeProxyController is VeeSystemController, Initializable{
     /**
      * @param orderOwner  The address of order owner
      * @param ctokenA     The address of ctoken A
-     * @param tokenB      The address of token B
+     * @param ctokenB      The address of ctoken B
      * @param amountA     The token A amount
      * @param stopHighPairPrice  limit token pair price
      * @param stopLowPairPrice   stop token pair price
@@ -67,7 +67,7 @@ contract VeeProxyController is VeeSystemController, Initializable{
      */
     struct CreateParams {
        address ctokenA;
-       address tokenB;
+       address ctokenB;
        uint256 amountA;
        uint256 stopHighPairPrice;
        uint256 stopLowPairPrice;
@@ -270,9 +270,10 @@ contract VeeProxyController is VeeSystemController, Initializable{
      */
     function createOrderERC20ToERC20(address orderOwner,CreateParams memory createParams) external veeLock(uint8(VeeLockState.LOCK_CREATE)) payable returns (bytes32 orderId){
         address tokenA = CErc20Interface(createParams.ctokenA).underlying();
-        commonCheck(orderOwner, createParams.stopHighPairPrice, createParams.stopLowPairPrice, createParams.amountA, createParams.expiryDate, createParams.leverage, createParams.ctokenA, tokenA,createParams.tokenB);
-        uint256[] memory amounts = swapERC20ToERC20(tokenA, createParams.tokenB, calcSwapAmount(createParams.amountA, createParams.leverage),createParams.amountOutMin);
-        orderId = onOrderCreate(orderOwner,createParams,amounts,tokenA);
+        address tokenB = CErc20Interface(createParams.ctokenB).underlying();
+        commonCheck(orderOwner, createParams.stopHighPairPrice, createParams.stopLowPairPrice, createParams.amountA, createParams.expiryDate, createParams.leverage, createParams.ctokenA, tokenA,tokenB);
+        uint256[] memory amounts = swapERC20ToERC20(tokenA, tokenB, calcSwapAmount(createParams.amountA, createParams.leverage),getAmountOutMin(createParams));
+        orderId = onOrderCreate(orderOwner,createParams,amounts,tokenA,tokenB);
     }
 
     /**
@@ -283,8 +284,8 @@ contract VeeProxyController is VeeSystemController, Initializable{
     function createOrderERC20ToETH(address orderOwner,CreateParams memory createParams) external veeLock(uint8(VeeLockState.LOCK_CREATE)) payable returns (bytes32 orderId){
         address tokenA = CErc20Interface(createParams.ctokenA).underlying();
         commonCheck(orderOwner, createParams.stopHighPairPrice, createParams.stopLowPairPrice, createParams.amountA, createParams.expiryDate, createParams.leverage, createParams.ctokenA, tokenA,VETH);
-        uint256[] memory amounts = swapERC20ToETH(tokenA, calcSwapAmount(createParams.amountA, createParams.leverage),createParams.amountOutMin);
-        orderId = onOrderCreate(orderOwner,createParams,amounts,tokenA);
+        uint256[] memory amounts = swapERC20ToETH(tokenA, calcSwapAmount(createParams.amountA, createParams.leverage),getAmountOutMin(createParams));
+        orderId = onOrderCreate(orderOwner,createParams,amounts,tokenA,VETH);
     }
 
     /**
@@ -293,30 +294,36 @@ contract VeeProxyController is VeeSystemController, Initializable{
      * @return orderId
      */
     function createOrderETHToERC20(address orderOwner,CreateParams memory createParams) external veeLock(uint8(VeeLockState.LOCK_CREATE)) payable returns (bytes32 orderId){
-        address tokenA = VETH;
-        commonCheck(orderOwner, createParams.stopHighPairPrice, createParams.stopLowPairPrice, createParams.amountA, createParams.expiryDate, createParams.leverage, createParams.ctokenA, tokenA,createParams.tokenB);
-        uint256[] memory amounts =  swapETHToERC20(createParams.tokenB, calcSwapAmount(createParams.amountA, createParams.leverage),createParams.amountOutMin);
-        orderId = onOrderCreate(orderOwner,createParams,amounts,tokenA);
+        address tokenB = CErc20Interface(createParams.ctokenB).underlying();
+        commonCheck(orderOwner, createParams.stopHighPairPrice, createParams.stopLowPairPrice, createParams.amountA, createParams.expiryDate, createParams.leverage, createParams.ctokenA, VETH,tokenB);
+        uint256[] memory amounts =  swapETHToERC20(tokenB, calcSwapAmount(createParams.amountA, createParams.leverage),getAmountOutMin(createParams));
+        orderId = onOrderCreate(orderOwner,createParams,amounts,VETH,tokenB);
     }
+
+  
 
     /**
      * @dev save order and emit event
      *
      * @return orderId
      */
-    function onOrderCreate(address orderOwner,CreateParams memory createParams,uint256[] memory amounts, address tokenA) internal returns (bytes32 orderId) {
+    function onOrderCreate(address orderOwner,CreateParams memory createParams,uint256[] memory amounts, address tokenA,address tokenB) internal returns (bytes32 orderId) {
         subAndSaveBalance(orderOwner, tokenA, createParams.amountA);
         subAndSaveLeverageBalance(orderOwner, tokenA, createParams.amountA.mul(createParams.leverage - 1));
-        addAndSaveBalance(orderOwner, createParams.tokenB, amounts[1]);
-        orderId = keccak256(abi.encode(orderOwner, createParams.amountA, tokenA, createParams.tokenB, getRandom()));
-        emit OnTokenSwapped(orderId, orderOwner, tokenA, createParams.tokenB, amounts[0], amounts[1]);
+        addAndSaveBalance(orderOwner, tokenB, amounts[1]);
+        orderId = keccak256(abi.encode(orderOwner, createParams.amountA, tokenA, tokenB, getRandom()));
+        emit OnTokenSwapped(orderId, orderOwner, tokenA, tokenB, amounts[0], amounts[1]);
         {
-            Order memory order = Order(orderOwner, createParams.ctokenA, tokenA, createParams.tokenB, createParams.amountA, amounts[1], createParams.stopHighPairPrice, createParams.stopLowPairPrice, createParams.expiryDate, createParams.leverage);
+            Order memory order = Order(orderOwner, createParams.ctokenA, tokenA, tokenB, createParams.amountA, amounts[1], createParams.stopHighPairPrice, createParams.stopLowPairPrice, createParams.expiryDate, createParams.leverage);
             orders[orderId] = order;
         }
-        uint256 priceA = getPairPrice(tokenA,baseToken);
-        uint256 priceB = getPairPrice(createParams.tokenB,baseToken);
-        emit OnOrderCreated(orderId, orderOwner, tokenA, createParams.ctokenA, createParams.tokenB, createParams.amountA, createParams.stopHighPairPrice, createParams.stopLowPairPrice, createParams.expiryDate, createParams.leverage, priceA, priceB);
+        emit OnOrderCreated(orderId, orderOwner, tokenA, createParams.ctokenA, tokenB, createParams.amountA, createParams.stopHighPairPrice, createParams.stopLowPairPrice, createParams.expiryDate, createParams.leverage, getPairPrice(tokenA,baseToken), getPairPrice(tokenB,baseToken));
+    }
+
+
+    function getAmountOut(address tokenIn, address tokenOut,uint256 amountIn) internal returns(uint256 amountOut){
+        bytes memory data = delegateTo(swapHelper, abi.encodeWithSignature("getAmountOut(address,address,uint256)", tokenIn, tokenOut,amountIn));
+        amountOut = abi.decode(data,(uint256));
     }
 
     /**
@@ -421,6 +428,19 @@ contract VeeProxyController is VeeSystemController, Initializable{
         commonCreateRequire(orderOwner, stopHighPairPrice, stopLowPairPrice, amountA, expiryDate, leverage, tokenB, ctokenA);
         addPlatformFees(tokenA, amountA, leverage);
         checkAllowance(orderOwner,tokenA,amountA,leverage);
+    }
+
+    function getAmountOutMin(CreateParams memory createParams) internal returns(uint256 amountOutMin) {
+        address tokenA = CErc20Interface(createParams.ctokenA).underlying();
+        address tokenB = CErc20Interface(createParams.ctokenB).underlying();
+        uint256 priceA = IPriceOracle(oracle).getUnderlyingPrice(createParams.ctokenA) * getTokenDecimals(tokenA) / 1e30;
+        uint256 priceB = IPriceOracle(oracle).getUnderlyingPrice(createParams.ctokenB) * getTokenDecimals(tokenA) / 1e30;
+        uint256 swapAmountA = calcSwapAmount(createParams.amountA, createParams.leverage);
+        uint256 amountFromOracle = priceB * swapAmountA / priceA ;
+        uint256 amountOut = getAmountOut(tokenA, tokenB, swapAmountA);
+        amountOutMin = amountFromOracle * 95 / 100;
+        bool isRightPrice = amountOut >= amountOutMin;
+        require(isRightPrice,"price error");
     }
 
     function getTokenDecimals(address token) internal view returns(uint256 decimals) {
