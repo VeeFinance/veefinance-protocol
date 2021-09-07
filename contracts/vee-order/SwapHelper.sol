@@ -91,7 +91,7 @@ contract SwapHelper {
      *
      * @return amountOut
      */
-    function getAmountOut(address tokenA, address tokenB,uint256 amountIn) internal view returns(uint256 amountOut){
+    function getAmountOut(address tokenA, address tokenB,uint256 amountIn) public view returns(uint256 amountOut){
         IPangolinRouter UniswapV2Router = IPangolinRouter(_router());
         IUniswapV2Factory UniswapV2Factory = IUniswapV2Factory(UniswapV2Router.factory());
         address factoryAddress = UniswapV2Factory.getPair(tokenA, tokenB);
@@ -181,7 +181,7 @@ contract SwapHelper {
         if(priceB > 0){
             price = getTokenA2TokenBPrice(tokenA,wavax).mul(1e18).div(priceB);
         }
-         require(price !=  0,"price can't be 0");
+        require(price !=  0,"price can't be 0");
     }
 
     /**

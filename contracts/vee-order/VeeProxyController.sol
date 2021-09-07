@@ -62,7 +62,6 @@ contract VeeProxyController is VeeSystemController, Initializable{
      * @param stopHighPairPrice  limit token pair price
      * @param stopLowPairPrice   stop token pair price
      * @param expiryDate   expiry date
-     * @param amountOutMin   amountOutMin
      * @param leverage    levarage
      */
     struct CreateParams {
@@ -72,7 +71,6 @@ contract VeeProxyController is VeeSystemController, Initializable{
        uint256 stopHighPairPrice;
        uint256 stopLowPairPrice;
        uint256 expiryDate;
-       uint256 amountOutMin;
        uint8 leverage;
     }
 
@@ -204,10 +202,6 @@ contract VeeProxyController is VeeSystemController, Initializable{
      */
     event NewMaxLeverage(uint8 oldMaxLeverage, uint8 newMaxLeverage);
 
-    /**
-     * @notice Event emitted when maxExpire is changed
-     */
-    event NewMaxExpire(uint256 oldMaxExpire, uint256 newMaxExpire);
 
     /**
      * @notice Event emitted when oracle is changed
@@ -321,9 +315,14 @@ contract VeeProxyController is VeeSystemController, Initializable{
     }
 
 
-    function getAmountOut(address tokenIn, address tokenOut,uint256 amountIn) internal returns(uint256 amountOut){
-        bytes memory data = delegateTo(swapHelper, abi.encodeWithSignature("getAmountOut(address,address,uint256)", tokenIn, tokenOut,amountIn));
-        amountOut = abi.decode(data,(uint256));
+
+    function getRealToken(address token) internal view returns(address real) {
+        if(token == VETH){
+            IPangolinRouter router  = IPangolinRouter(_router());
+            real =  router.WAVAX();
+         }else{
+             real = token;
+         }
     }
 
     /**
@@ -431,17 +430,26 @@ contract VeeProxyController is VeeSystemController, Initializable{
     }
 
     function getAmountOutMin(CreateParams memory createParams) internal returns(uint256 amountOutMin) {
-        address tokenA = CErc20Interface(createParams.ctokenA).underlying();
-        address tokenB = CErc20Interface(createParams.ctokenB).underlying();
-        uint256 priceA = IPriceOracle(oracle).getUnderlyingPrice(createParams.ctokenA) * getTokenDecimals(tokenA) / 1e30;
-        uint256 priceB = IPriceOracle(oracle).getUnderlyingPrice(createParams.ctokenB) * getTokenDecimals(tokenA) / 1e30;
+        address tokenA = getUnderlying(createParams.ctokenA);
+        address tokenB = getUnderlying(createParams.ctokenB);
+        uint256 priceA = IPriceOracle(oracle).getUnderlyingPrice(createParams.ctokenA);
+        uint256 priceB = IPriceOracle(oracle).getUnderlyingPrice(createParams.ctokenB);
         uint256 swapAmountA = calcSwapAmount(createParams.amountA, createParams.leverage);
-        uint256 amountFromOracle = priceB * swapAmountA / priceA ;
+        uint256 amountFromOracle = priceA * swapAmountA / priceB;
         uint256 amountOut = getAmountOut(tokenA, tokenB, swapAmountA);
         amountOutMin = amountFromOracle * 95 / 100;
         bool isRightPrice = amountOut >= amountOutMin;
         require(isRightPrice,"price error");
     }
+
+    function getUnderlying(address ctoken) internal returns(address underlying) {
+        if(ctoken == _cether){
+            underlying = VETH;
+        }else{
+            underlying = CErc20Interface(ctoken).underlying();
+        }
+    } 
+
 
     function getTokenDecimals(address token) internal view returns(uint256 decimals) {
         if(token == VETH){
@@ -561,7 +569,7 @@ contract VeeProxyController is VeeSystemController, Initializable{
         }else{
             amounts = swapETHToERC20(order.tokenA, order.amountB,1);
         }
-        require(amounts[1] != 0, "failed to swap tokens");
+        require(amounts[1] != 0, "close error");
         settlementOrder(orderId, amounts,order);        
     }
 
@@ -770,15 +778,27 @@ contract VeeProxyController is VeeSystemController, Initializable{
      * @return price (price tokenA per tokenB)
      */
     function getTokenA2TokenBPrice(address tokenA, address tokenB) internal returns(uint256 price){
-        IPangolinRouter router  = IPangolinRouter(_router());
-        if(tokenA == VETH){
-            tokenA =  router.WAVAX();
-         }
-         if(tokenB == VETH){
-             tokenB = router.WAVAX();
-         }
+        tokenA = getRealToken(tokenA);
+        tokenB = getRealToken(tokenB);
         bytes memory data = delegateTo(swapHelper, abi.encodeWithSignature("getTokenA2TokenBPrice(address,address)", tokenB, tokenA));
         price = abi.decode(data,(uint256));
+    }
+
+    function getAmountOut(address tokenA, address tokenB,uint256 amountIn) internal view returns(uint256 amountOut){
+        IPangolinRouter UniswapV2Router = IPangolinRouter(_router());
+        IUniswapV2Factory UniswapV2Factory = IUniswapV2Factory(UniswapV2Router.factory());
+        tokenA = getRealToken(tokenA);
+        tokenB = getRealToken(tokenB);
+        address factoryAddress = UniswapV2Factory.getPair(tokenA, tokenB);
+        require(factoryAddress != address(0), "token pair error");
+        IUniswapV2Pair UniswapV2Pair = IUniswapV2Pair(factoryAddress);
+        (uint Res0, uint Res1,) = UniswapV2Pair.getReserves();
+        if (tokenA < tokenB) {
+            amountOut = UniswapV2Router.getAmountOut(amountIn, Res0, Res1);
+        } else {
+            amountOut = UniswapV2Router.getAmountOut(amountIn, Res1, Res0);
+        }
+        require(amountOut != 0, "error PairPrice");
     }
 
 
@@ -1004,17 +1024,6 @@ contract VeeProxyController is VeeSystemController, Initializable{
         uint8 oldMaxLeverage = maxLeverage;
         maxLeverage = newMaxLeverage;
         emit NewMaxLeverage(oldMaxLeverage, newMaxLeverage);
-    }
-
-    /**
-     * @dev update max expire date
-     *
-     */
-    function setMaxExpire(uint8 newMaxExpire) external onlyAdmin {
-        require(newMaxExpire >= 3 days,"invalid expire");
-        uint256 oldMaxExpire = maxExpire;
-        maxExpire = newMaxExpire;
-        emit NewMaxExpire(oldMaxExpire, newMaxExpire);
     }
 
     /**
