@@ -105,7 +105,7 @@ contract VestingEscrow is Initializable{
                 emit Unlock(msg.sender, uint8(i), amountUnlocked, schedules[i].totalAmount - totalAmountVested);
             }
         }
-        require( vestingToken.transfer(msg.sender, totalUnlocked) );
+        vestingToken.safeTransfer(msg.sender, totalUnlocked);
         emit Withdraw(msg.sender, totalUnlocked, unlockedBalances[msg.sender]);
         unlockedBalances[msg.sender] = 0;
         lastWithdrawTime[msg.sender] = block.timestamp;
