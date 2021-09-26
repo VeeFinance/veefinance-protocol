@@ -332,7 +332,7 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
             return (mathErr, 0);
         }
 
-        (mathErr, result) = divUInt(principalTimesIndex, interestIndex + 4);
+        (mathErr, result) = divUInt(principalTimesIndex, interestIndex);
         if (mathErr != MathError.NO_ERROR) {
             return (mathErr, 0);
         }
