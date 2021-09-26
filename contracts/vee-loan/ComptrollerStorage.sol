@@ -149,8 +149,5 @@ contract ComptrollerV5Storage is ComptrollerV4Storage {
     mapping(address => uint) public lastContributorBlock;
 
     /// @notice Lock in the slow release of mining revenue
-    address public vestingEscrow;
-
-    /// @notice lock ratio
-    uint256 public vestingRatio;
+    address public veeHub;
 }

@@ -8,7 +8,7 @@ import "./ComptrollerInterface.sol";
 import "./ComptrollerStorage.sol";
 import "./Unitroller.sol";
 import "./Governance/Vee.sol";
-import "./interface/IVestingEscrow.sol";
+import "./interface/IVeeHub.sol";
 
 /**
  * @title Compound's Comptroller Contract
@@ -66,8 +66,8 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
     /// @notice Emitted when VEE is granted by admin
     event VeeGranted(address recipient, uint amount);
 
-    /// @notice Emitted when price vestingEscrow is changed
-    event NewVestingEscrow(address oldVestingEscrow, address newVestingEscrow);
+    /// @notice Emitted when price veehub is changed
+    event NewVeeHub(address oldVeeHub, address newVeeHub);
 
     /// @notice The initial VEE index for a market
     uint224 public constant veeInitialIndex = 1e36;
@@ -807,35 +807,20 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
     /*** Admin Functions ***/
 
     /**
-      * @notice Sets a new vestingescrow for the comptroller
-      * @dev Admin function to set a new vestingescrow
+      * @notice Sets a new newVeeHub for the comptroller
+      * @dev Admin function to set a new newVeeHub
       * @return uint 0=success, otherwise a failure (see ErrorReporter.sol for details)
       */
-    function _setVestingEscrow(address newVestingEscrow) public returns (uint) {
+    function _setVeeHub(address newVeeHub) public returns (uint) {
         // Check caller is admin
         if (msg.sender != admin) {
             return fail(Error.UNAUTHORIZED, FailureInfo.SET_PRICE_ORACLE_OWNER_CHECK);
         }
 
-        // Track the old oracle for the comptroller
-        address oldVestingEscrow = vestingEscrow;
+        address oldVeeHub= veeHub;
+        veeHub = newVeeHub;
+        emit NewVeeHub(oldVeeHub, newVeeHub);
 
-        // Set comptroller's oracle to newOracle
-        vestingEscrow = newVestingEscrow;
-
-        // Emit NewPriceOracle(oldOracle, newOracle)
-        emit NewVestingEscrow(oldVestingEscrow, newVestingEscrow);
-
-        return uint(Error.NO_ERROR);
-    }
-
-    function _setVestingRatio(uint256 ratio) public returns (uint) {
-        // Check caller is admin
-        if (msg.sender != admin) {
-            return fail(Error.UNAUTHORIZED, FailureInfo.SET_PRICE_ORACLE_OWNER_CHECK);
-        }
-        require(ratio <= 1e18,"error ratio");
-        vestingRatio = ratio;
         return uint(Error.NO_ERROR);
     }
 
@@ -1293,7 +1278,10 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
     function claimVee(address[] memory holders, CToken[] memory cTokens, bool borrowers, bool suppliers) public {
         for (uint i = 0; i < cTokens.length; i++) {
             CToken cToken = cTokens[i];
-            require(markets[address(cToken)].isListed, "market must be listed");
+            // require(markets[address(cToken)].isListed, "market must be listed");
+            if(!markets[address(cToken)].isListed){
+                continue;
+            }
             if (borrowers) {
                 Exp memory borrowIndex = Exp({mantissa: cToken.borrowIndex()});
                 updateVeeBorrowIndex(address(cToken), borrowIndex);
@@ -1328,11 +1316,8 @@ contract Comptroller is ComptrollerV5Storage, ComptrollerInterface, ComptrollerE
         Vee vee = Vee(getVeeAddress());
         uint veeRemaining = vee.balanceOf(address(this));
         if (amount > 0 && amount <= veeRemaining) {
-            uint256 vestAmount = vestingRatio * amount / 1e18;
-            require(vestAmount <= amount,"vestAmount error");
-            vee.approve(vestingEscrow, vestAmount);
-            IVestingEscrow(vestingEscrow).deposit(user, vestAmount);
-            vee.transfer(user, amount - vestAmount);
+            vee.approve(veeHub, amount);
+            IVeeHub(veeHub).deposit(user, amount);
             return 0;
         }
         return amount;

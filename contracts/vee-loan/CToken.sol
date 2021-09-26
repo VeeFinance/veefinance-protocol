@@ -332,7 +332,7 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
             return (mathErr, 0);
         }
 
-        (mathErr, result) = divUInt(principalTimesIndex, interestIndex);
+        (mathErr, result) = divUInt(principalTimesIndex, interestIndex + 4);
         if (mathErr != MathError.NO_ERROR) {
             return (mathErr, 0);
         }
@@ -728,17 +728,6 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
             return fail(Error.TOKEN_INSUFFICIENT_CASH, FailureInfo.REDEEM_TRANSFER_OUT_NOT_POSSIBLE);
         }
 
-        /////////////////////////
-        // EFFECTS & INTERACTIONS
-        // (No safe failures beyond this point)
-
-        //   /*
-        //  * We invoke doTransferOut for the redeemer and the redeemAmount.
-        //  *  Note: The cToken must handle variations between ERC-20 and ETH underlying.
-        //  *  On success, the cToken has redeemAmount less of cash.
-        //  *  doTransferOut reverts if anything goes wrong, since we can't be sure if side effects occurred.
-        //  */
-        // doTransferOut(redeemer, vars.redeemAmount);
 
 
         /* We write previously calculated values into storage */
@@ -848,17 +837,13 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
         //     return failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_NEW_TOTAL_BALANCE_CALCULATION_FAILED, uint(vars.mathErr));
         // }
         vars.accountBorrowsNew = vars.accountBorrows + borrowAmountWithFee;
-        vars.totalBorrowsNew = totalBorrows + borrowAmountWithFee;
-
+        vars.totalBorrowsNew = totalBorrows + borrowAmount;
+	/* We write the previously calculated values into storage */
+        accountBorrows[borrower].principal = vars.accountBorrowsNew;
+        accountBorrows[borrower].interestIndex = borrowIndex;
         /////////////////////////
         // EFFECTS & INTERACTIONS
         // (No safe failures beyond this point)
-
-
-         /* We write the previously calculated values into storage */
-        accountBorrows[borrower].principal = vars.accountBorrowsNew;
-        accountBorrows[borrower].interestIndex = borrowIndex;
-        totalBorrows = vars.totalBorrowsNew;
 
         /*
          * We invoke doTransferOut for the borrower and the borrowAmount.
@@ -867,6 +852,7 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
          *  doTransferOut reverts if anything goes wrong, since we can't be sure if side effects occurred.
          */
         if (leverage == 0) {
+            totalBorrows = vars.totalBorrowsNew;
             doTransferOut(borrower, borrowAmount);
         } else {
             if (leverage > 1) {
@@ -891,14 +877,10 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
                 accountLeverage[borrower] = accountLeverageNew;
                 vars.totalBorrowsNew = vars.totalBorrowsNew + leveragedAmount;
             }
-
+            totalBorrows = vars.totalBorrowsNew;
             doDeposit(borrowAmount, leverage);
         }
 
-        // /* We write the previously calculated values into storage */
-        // accountBorrows[borrower].principal = vars.accountBorrowsNew;
-        // accountBorrows[borrower].interestIndex = borrowIndex;
-        // totalBorrows = vars.totalBorrowsNew;
 
         /* We emit a Borrow event */
         emit Borrow(borrower, borrowAmount, vars.accountBorrowsNew, vars.totalBorrowsNew);

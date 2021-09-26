@@ -14,6 +14,15 @@ interface ComptrollerLensInterface {
     function getAssetsIn(address) external view returns (CToken[] memory);
     function claimVee(address) external;
     function veeAccrued(address) external view returns (uint);
+    function veeHub() external view returns (address);
+}
+
+interface IVeeHub {
+    function farmPool(  ) external view returns (address ) ;
+    function veeBalances( address  ) external view returns (uint256 ) ;
+}
+interface IVeeLPFarm {
+    function claimVee(address) external;
 }
 interface GovernorBravoInterface {
     struct Receipt {
@@ -197,20 +206,49 @@ contract VeeLens {
 
     struct VeeBalanceMetadataExt {
         uint balance;
-        uint allocated;
+        uint loanAllocated;
+        uint farmAllocated;
+    }
+
+    function getLoanAllocated(ComptrollerLensInterface comptroller, address account) external returns (uint) {
+        IVeeHub veeHub = IVeeHub(comptroller.veeHub());
+        uint loanBalance = veeHub.veeBalances(account);
+        comptroller.claimVee(account);
+        uint newLoanBalance = veeHub.veeBalances(account);
+        uint loanAccrued = comptroller.veeAccrued(account);
+        uint loanAllocated = loanAccrued + newLoanBalance - loanBalance;
+
+        return loanAllocated;
+    }
+
+    function getFarmAllocated(IVeeHub veeHub, address account) external returns (uint) {
+        IVeeLPFarm lpFarm = IVeeLPFarm(veeHub.farmPool());
+        uint farmBalance = veeHub.veeBalances(account);
+        lpFarm.claimVee(account);
+        uint newFarmBalance = veeHub.veeBalances(account);
+        uint farmAllocated = newFarmBalance - farmBalance;
+
+        return farmAllocated;
     }
 
     function getVeeBalanceMetadataExt(Vee vee, ComptrollerLensInterface comptroller, address account) external returns (VeeBalanceMetadataExt memory) {
+        IVeeHub veeHub = IVeeHub(comptroller.veeHub());
         uint balance = vee.balanceOf(account);
+        uint loanBalance = veeHub.veeBalances(account);
         comptroller.claimVee(account);
-        uint newBalance = vee.balanceOf(account);
-        uint accrued = comptroller.veeAccrued(account);
-        uint total = add(accrued, newBalance, "sum comp total");
-        uint allocated = sub(total, balance, "sub allocated");
+        uint newLoanBalance = veeHub.veeBalances(account);
+        uint loanAccrued = comptroller.veeAccrued(account);
+        uint loanAllocated = loanAccrued + newLoanBalance - loanBalance;
+        IVeeLPFarm lpFarm = IVeeLPFarm(veeHub.farmPool());
+        uint farmBalance = veeHub.veeBalances(account);
+        lpFarm.claimVee(account);
+        uint newFarmBalance = veeHub.veeBalances(account);
+        uint farmAllocated = newFarmBalance - farmBalance;
 
         return VeeBalanceMetadataExt({
             balance: balance,
-            allocated: allocated
+            loanAllocated: loanAllocated,
+            farmAllocated: farmAllocated
         });
     }
 
@@ -235,10 +273,16 @@ contract VeeLens {
         return c;
     }
 
-    function claimVee(address holder,address[] memory comptrollers) external {
+
+    function claimVee(address holder,address[] memory comptrollers,address lpFarm) external {
         for(uint i = 0; i < comptrollers.length; i++){
             ComptrollerLensInterface comptroller = ComptrollerLensInterface(comptrollers[i]);
             comptroller.claimVee(holder);
         }
+        if(lpFarm != address(0)){
+            IVeeLPFarm(lpFarm).claimVee(holder);
+        }
     }
 }
+
+

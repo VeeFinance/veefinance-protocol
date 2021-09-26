@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.8.0;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -105,7 +105,7 @@ contract VestingEscrow is Initializable{
                 emit Unlock(msg.sender, uint8(i), amountUnlocked, schedules[i].totalAmount - totalAmountVested);
             }
         }
-        vestingToken.safeTransfer(msg.sender, totalUnlocked);
+        require( vestingToken.transfer(msg.sender, totalUnlocked) );
         emit Withdraw(msg.sender, totalUnlocked, unlockedBalances[msg.sender]);
         unlockedBalances[msg.sender] = 0;
         lastWithdrawTime[msg.sender] = block.timestamp;
