@@ -118,10 +118,6 @@ abstract contract CTokenStorage {
      */
     mapping(address => BorrowSnapshot) internal accountBorrows;
 
-    /**
-     * @notice Mapping of account leverage balances
-     */
-    mapping(address => uint) public accountLeverage;
 }
 
 abstract contract CTokenInterface is CTokenStorage {

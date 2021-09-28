@@ -206,44 +206,6 @@ contract CErc20 is CToken, CErc20Interface {
     }
 
     /**
-     * @notice deposit erc20 token into order proxy
-     * @param amount amount of erc20 token being sent
-     */
-    function doDeposit(uint amount, uint8 leverage) internal override {
-        IVeeProxyController(orderProxy).deposit(msg.sender, underlying, amount, leverage);
-    }
-
-    /**
-     * @dev combined borrowLeverage and callOrderProxy
-     * @param borrowAmount amount of erc20 token to borrow
-     * @param leverage borrow amount multiply factor
-     * @param signature the selector of Order Proxy function
-     * @param order calldata for createOrderXXX
-     */
-    function borrowAndCall(uint borrowAmount, uint8 leverage, bytes4 signature, bytes calldata order) external payable returns (bytes memory) {
-        EIP20NonStandardInterface erc20 = EIP20NonStandardInterface(underlying);
-        (MathError mathErr, uint realAmount) = mulUInt(borrowAmount, leverage);
-        require (mathErr == MathError.NO_ERROR, "amount error");
-        erc20.approve(orderProxy, realAmount);
-        uint ret = borrowLeverageInternal(borrowAmount, leverage);
-        require(ret == uint(MathError.NO_ERROR), "borrow error");
-        (bool success, bytes memory returnData) = callOrderProxyInternal(signature, order);
-        require(success, _getRevertMsg(returnData));
-        return returnData;
-    }
-
-    function repayLeverageAndBorrow(address borrower, uint repayAmount, uint expectLeverageAmount, uint realLeverageAmount) external returns (uint err, uint result) {
-        if (realLeverageAmount > 0) {
-        (err, result) = repayLeverageInternal(borrower, expectLeverageAmount, realLeverageAmount);
-            requireNoError(err, "repayLeverage failed");
-        }
-        if(repayAmount > 0) {
-        (err, result) = repayBorrowBehalfInternal(borrower, repayAmount);
-            requireNoError(err, "repayBorrow failed");
-        }
-    }
-
-    /**
      * @notice Sender mint tokens for receiver
      * @param receiver the account being minted for
      * @param mintAmount The amount to mint

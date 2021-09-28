@@ -17,7 +17,7 @@ import "./library/Address.sol";
  */
 abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
     address constant VETH = address(1);
-    address public cTokenCore;
+
     /**
      * @notice Initialize the money market
      * @param comptroller_ The address of the Comptroller
@@ -112,7 +112,7 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
 
         uint allowanceNew = startingAllowance - tokens;
         uint srcTokensNew = accountTokens[src] - tokens;
-        uint dstTokensNew = accountTokens[dst] - tokens;
+        uint dstTokensNew = accountTokens[dst] + tokens;
 
         /////////////////////////
         // EFFECTS & INTERACTIONS
@@ -764,7 +764,7 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
             return fail(Error(error), FailureInfo.BORROW_ACCRUE_INTEREST_FAILED);
         }
         // borrowFresh emits borrow-specific logs on errors, so we don't need to
-        return borrowFresh(payable(msg.sender), borrowAmount, 0);
+        return borrowFresh(payable(msg.sender), borrowAmount);
     }
 
     struct BorrowLocalVars {
@@ -779,8 +779,8 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
       * @param borrowAmount The amount of the underlying asset to borrow
       * @return uint 0=success, otherwise a failure (see ErrorReporter.sol for details)
       */
-    function borrowFresh(address payable borrower, uint borrowAmount, uint8 leverage) internal returns (uint) {
-        require(!Address.isContract(msg.sender),"contract call deny");
+    function borrowFresh(address payable borrower, uint borrowAmount) internal returns (uint) {
+        require(msg.sender == tx.origin, "contract call deny");
         /* Fail if borrow not allowed */
         uint allowed = comptroller.borrowAllowed(address(this), borrower, borrowAmount);
         if (allowed != 0) {
@@ -811,22 +811,6 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
             return failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_ACCUMULATED_BALANCE_CALCULATION_FAILED, uint(vars.mathErr));
         }
 
-        if (accountLeverage[borrower] > 0) {
-            BorrowSnapshot storage borrowSnapshot = accountBorrows[borrower];
-            (vars.mathErr, deltaFee) = deltaAccrueFeeInternal(accountLeverage[borrower], borrowIndex, borrowSnapshot.interestIndex);
-            if (vars.mathErr != MathError.NO_ERROR) {
-                return failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_ACCUMULATED_BALANCE_CALCULATION_FAILED, uint(vars.mathErr));
-            }
-
-            // (vars.mathErr, borrowAmountWithFee) = addUInt(borrowAmount, deltaFee);
-            // if (vars.mathErr != MathError.NO_ERROR) {
-            //     return failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_ACCUMULATED_BALANCE_CALCULATION_FAILED, uint(vars.mathErr));
-            // }
-            borrowAmountWithFee = borrowAmount + deltaFee;
-        } else {
-            borrowAmountWithFee = borrowAmount;
-        }
-
         // (vars.mathErr, vars.accountBorrowsNew) = addUInt(vars.accountBorrows, borrowAmountWithFee);
         // if (vars.mathErr != MathError.NO_ERROR) {
         //     return failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_NEW_ACCOUNT_BORROW_BALANCE_CALCULATION_FAILED, uint(vars.mathErr));
@@ -836,7 +820,7 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
         // if (vars.mathErr != MathError.NO_ERROR) {
         //     return failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_NEW_TOTAL_BALANCE_CALCULATION_FAILED, uint(vars.mathErr));
         // }
-        vars.accountBorrowsNew = vars.accountBorrows + borrowAmountWithFee;
+        vars.accountBorrowsNew = vars.accountBorrows + borrowAmount;
         vars.totalBorrowsNew = totalBorrows + borrowAmount;
 	/* We write the previously calculated values into storage */
         accountBorrows[borrower].principal = vars.accountBorrowsNew;
@@ -851,35 +835,9 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
          *  On success, the cToken borrowAmount less of cash.
          *  doTransferOut reverts if anything goes wrong, since we can't be sure if side effects occurred.
          */
-        if (leverage == 0) {
             totalBorrows = vars.totalBorrowsNew;
             doTransferOut(borrower, borrowAmount);
-        } else {
-            if (leverage > 1) {
-                // leveragedAmount = borrowAmount * (leverage - 1);
-                uint leveragedAmount;
-                uint accountLeverageNew;
-                // (vars.mathErr, leveragedAmount) = mulUInt(borrowAmount, leverage - 1);
-                // if (vars.mathErr != MathError.NO_ERROR) {
-                //     // accrueInterest emits logs on errors, but we still want to log the fact that an attempted borrow failed
-                //     return failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_FRESH_LEVERAGE_AMOUNT_FAILED, uint(vars.mathErr));
-                // }
-                // (vars.mathErr, accountLeverageNew) = addUInt(accountLeverage[borrower], leveragedAmount);
-                // if (vars.mathErr != MathError.NO_ERROR) {
-                //     return failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_FRESH_LEVERAGE_AMOUNT_FAILED, uint(vars.mathErr));
-                // }
-                // (vars.mathErr, vars.totalBorrowsNew) = addUInt(vars.totalBorrowsNew, leveragedAmount);
-                // if (vars.mathErr != MathError.NO_ERROR) {
-                //     return failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_NEW_TOTAL_BALANCE_CALCULATION_FAILED, uint(vars.mathErr));
-                // }
-                leveragedAmount = borrowAmount * (leverage - 1);
-                accountLeverageNew = accountLeverage[borrower] + leveragedAmount;
-                accountLeverage[borrower] = accountLeverageNew;
-                vars.totalBorrowsNew = vars.totalBorrowsNew + leveragedAmount;
-            }
-            totalBorrows = vars.totalBorrowsNew;
-            doDeposit(borrowAmount, leverage);
-        }
+        
 
 
         /* We emit a Borrow event */
@@ -1514,7 +1472,6 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
      */
     function doTransferOut(address payable to, uint amount) internal virtual;
 
-    function doDeposit(uint amount, uint8 leverage) internal virtual;
 
     /*** Reentrancy Guard ***/
 
@@ -1526,107 +1483,6 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
         _notEntered = false;
         _;
         _notEntered = true; // get a gas-refund post-Istanbul
-    }
-
-
-    /**
-     * @dev set Order Proxy address
-     *
-     */
-    function setOrderProxy(address newOrderProxy) external {
-        require(msg.sender == admin, "only admin may set OrderProxy");
-        require(newOrderProxy != address(0), "invalid OrderProxy address");
-        address oldOrderProxy = orderProxy;
-        orderProxy = newOrderProxy;
-        emit NewOrderProxy(oldOrderProxy, newOrderProxy);
-    }
-
-    /**
-     * @dev get Order Proxy address
-     * @return Order Proxy address
-     */
-    function getOrderProxy() external view returns(address){
-        return orderProxy;
-    }
-
-    function _getRevertMsg(bytes memory _returnData) internal pure returns (string memory) {
-        // If the _res length is less than 68, then the transaction failed silently (without a revert message)
-        if (_returnData.length < 68) return 'no details';
-
-        assembly {
-            // Slice the sighash.
-            _returnData := add(_returnData, 0x04)
-        }
-        return abi.decode(_returnData, (string)); // All that remains is the revert string
-    }
-
-    // /**
-    //  * @dev call Order Proxy methods warapper
-    //  *
-    //  * @param signature the selector of Order Proxy function
-    //  * @param order calldata for createOrderXXX
-    //  */
-    // function callOrderProxy(bytes4 signature, bytes calldata order) external payable {
-    //     require(orderProxy != address(0), "orderProxy not set");
-    //     // (bool success, bytes memory data) = callOrderProxyInternal(signature, order);
-    //     (bool success,bytes memory returnData) = callOrderProxyInternal(signature, order);
-    //     require(success, _getRevertMsg(returnData));
-    //     // return data;
-    // }
-
-    /**
-     * @dev call Order Proxy methods implementation
-     *
-     * @param signature the selector of Order Proxy function
-     * @param order calldata for createOrderXXX
-     */
-    function callOrderProxyInternal(bytes4 signature, bytes memory order) internal returns (bool, bytes memory) {
-        require(orderProxy != address(0), "orderProxy not set");
-        bytes memory sender = abi.encode(msg.sender);
-        bytes memory callData = BytesLib.concatBytesSig(signature, sender, order);
-        return orderProxy.call{value:msg.value}(callData);
-    }
-
-    /**
-     * @dev Recovers the source address which signed a message
-     * @param message The data that was signed
-     * @param signature The fingerprint of the data + private key
-     * @return The source address which signed the message
-     */
-    function source(bytes memory message, bytes memory signature) internal pure returns (address) {
-        (bytes32 r, bytes32 s, uint8 v) = abi.decode(signature, (bytes32, bytes32, uint8));
-        bytes32 hash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", keccak256(message)));
-        return ecrecover(hash, v, r, s);
-    }
-
-    /**
-     * @dev decode message with signature into origin inputs
-     * @param message The payload containing the address to be updated
-     * @param signature The cryptographic signature of the message payload, authorizing the source to write
-     * @return The signer address and input addresss
-     */
-    function decodeMessage(bytes memory message, bytes memory signature) internal pure returns (address, address) {
-        address signer = source(message, signature);
-
-        (string memory kind, address value) = abi.decode(message, (string, address));
-        require(keccak256(abi.encodePacked(kind)) == keccak256(abi.encodePacked("order")), "Kind error");
-        return (signer, value);
-    }
-
-    /**
-      * @notice Sender borrows assets from the protocol to their own address
-      * @param borrowAmount The amount of the underlying asset to borrow
-      * @return uint 0=success, otherwise a failure (see ErrorReporter.sol for details)
-      */
-    function borrowLeverageInternal(uint borrowAmount, uint8 leverage) internal nonReentrant returns (uint) {
-        require(leverage >= 1 && leverage <= 3, "leverage invalid");
-        uint error = accrueInterest();
-        if (error != uint(Error.NO_ERROR)) {
-            // accrueInterest emits logs on errors, but we still want to log the fact that an attempted borrow failed
-            return fail(Error(error), FailureInfo.BORROW_ACCRUE_INTEREST_FAILED);
-        }
-        // borrowFresh emits borrow-specific logs on errors, so we don't need to
-        return borrowFresh(payable(msg.sender), borrowAmount, leverage);
     }
 
     /**
@@ -1643,101 +1499,6 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
         }
         // mintFresh emits the actual Mint event if successful and logs on errors, so we don't need to
         return mintFresh(receiver, mintAmount);
-    }
-
-    function repayLeverageFresh(address payer, address borrower, uint expectLeverageAmount, uint realLeverageAmount) internal returns (uint, uint) {
-        /* Verify market's block number equals current block number */
-        if (accrualBlockNumber != getBlockNumber()) {
-            return (fail(Error.MARKET_NOT_FRESH, FailureInfo.REPAY_BORROW_FRESHNESS_CHECK), 0);
-        }
-
-        RepayBorrowLocalVars memory vars;
-
-        // /* We remember the original borrowerIndex for verification purposes */
-        vars.borrowerIndex = accountBorrows[borrower].interestIndex;
-
-        // /* We fetch the amount the borrower owes, with accumulated interest */
-        (vars.mathErr, vars.accountBorrows) = borrowBalanceStoredInternal(borrower);
-        if (vars.mathErr != MathError.NO_ERROR) {
-            return (failOpaque(Error.MATH_ERROR, FailureInfo.REPAY_LEVERAGE_ACCUMULATED_BALANCE_CALCULATION_FAILED, uint(vars.mathErr)), 0);
-        }
-
-        /////////////////////////
-        // EFFECTS & INTERACTIONS
-        // (No safe failures beyond this point)
-
-        /*
-         * We call doTransferIn for the payer and the repayAmount
-         *  Note: The cToken must handle variations between ERC-20 and ETH underlying.
-         *  On success, the cToken holds an additional repayAmount of cash.
-         *  doTransferIn reverts if anything goes wrong, since we can't be sure if side effects occurred.
-         *   it returns the amount actually transferred, in case of a fee.
-         */
-        vars.actualRepayAmount = doTransferIn(payer, realLeverageAmount);
-
-        /*
-         * We calculate the new borrower and total borrow balances, failing on underflow:
-         *  accountBorrowsNew = accountLeverage[borrower] - actualRepayAmount
-         *  totalBorrowsNew = totalBorrows - actualRepayAmount
-         */
-        // (vars.mathErr, accountLeverageNew) = subUInt(accountLeverage[borrower], vars.actualRepayAmount);
-        // require(vars.mathErr == MathError.NO_ERROR, "REPAY_LEVERAGE_NEW_ACCOUNT_LEVERAGE_BALANCE_CALCULATION_FAILED");
-
-        // (vars.mathErr, vars.totalBorrowsNew) = subUInt(totalBorrows, vars.actualRepayAmount);
-        // require(vars.mathErr == MathError.NO_ERROR, "REPAY_LEVERAGE_NEW_TOTAL_BALANCE_CALCULATION_FAILED");
-        uint insufficientLeverage = expectLeverageAmount - vars.actualRepayAmount;
-        uint accountLeverageNew = accountLeverage[borrower] - expectLeverageAmount;
-        if (accountLeverage[borrower] > 0) {
-            BorrowSnapshot storage borrowSnapshot = accountBorrows[borrower];
-            uint deltaFee;
-            (vars.mathErr, deltaFee) = deltaAccrueFeeInternal(accountLeverage[borrower], borrowIndex, borrowSnapshot.interestIndex);
-            if (vars.mathErr != MathError.NO_ERROR) {
-                return (failOpaque(Error.MATH_ERROR, FailureInfo.REPAY_LEVERAGE_ACCUMULATED_BALANCE_CALCULATION_FAILED, uint(vars.mathErr)), 0);
-            }
-
-            // (vars.mathErr, vars.accountBorrowsNew) = addUInt(vars.accountBorrows, deltaFee);
-            // if (vars.mathErr != MathError.NO_ERROR) {
-            //     return (failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_NEW_ACCOUNT_BORROW_BALANCE_CALCULATION_FAILED, uint(vars.mathErr)), 0);
-            // }
-
-            // (vars.mathErr, vars.totalBorrowsNew) = addUInt(totalBorrows, deltaFee);
-            // if (vars.mathErr != MathError.NO_ERROR) {
-            //     return (failOpaque(Error.MATH_ERROR, FailureInfo.BORROW_NEW_TOTAL_BALANCE_CALCULATION_FAILED, uint(vars.mathErr)), 0);
-            // }
-            vars.accountBorrowsNew = vars.accountBorrows + deltaFee;
-        } else {
-            vars.accountBorrowsNew = vars.accountBorrows;
-        }
-        vars.accountBorrowsNew = vars.accountBorrowsNew + insufficientLeverage;
-        vars.totalBorrowsNew = totalBorrows - vars.actualRepayAmount;
-
-        /* We write the previously calculated values into storage */
-        accountLeverage[borrower] = accountLeverageNew;
-        if (insufficientLeverage > 0) {
-            emit LiquidateLeverage(borrower, insufficientLeverage, accountBorrows[borrower].principal, vars.accountBorrowsNew);
-        }
-        accountBorrows[borrower].principal = vars.accountBorrowsNew;
-        accountBorrows[borrower].interestIndex = borrowIndex;
-        totalBorrows = vars.totalBorrowsNew;
-
-        /* We emit a RepayBorrow event */
-        emit RepayLeverage(payer, borrower, vars.actualRepayAmount, expectLeverageAmount, accountLeverageNew);
-
-        /* We call the defense hook */
-        // unused function
-        // comptroller.repayBorrowVerify(address(this), payer, borrower, vars.actualRepayAmount, vars.borrowerIndex);
-
-        return (uint(Error.NO_ERROR), vars.actualRepayAmount);
-    }
-
-    function repayLeverageInternal(address borrower, uint expectLeverageAmount, uint realLeverageAmount) internal returns (uint, uint) {
-        require(expectLeverageAmount >= realLeverageAmount, "param invalid");
-        uint error = accrueInterest();
-        if (error != uint(Error.NO_ERROR)) {
-            // accrueInterest emits logs on errors, but we still want to log the fact that an attempted borrow failed
-            return (fail(Error(error), FailureInfo.REPAY_BEHALF_ACCRUE_INTEREST_FAILED), 0);
-        }
-        return repayLeverageFresh(msg.sender, borrower, expectLeverageAmount, realLeverageAmount);
     }
 
 }

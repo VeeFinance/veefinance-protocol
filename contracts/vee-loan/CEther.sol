@@ -167,61 +167,6 @@ contract CEther is CToken {
     }
 
     /**
-     * @notice deposit platform coin into order proxy
-     * @param amount amount of platform coin being sent
-     */
-    function doDeposit(uint amount, uint8 leverage) internal override {
-        (MathError mathErr, uint realAmount) = mulUInt(amount, leverage);
-        require (mathErr == MathError.NO_ERROR, "amount error");
-        IVeeProxyController(orderProxy).deposit{value:realAmount}(msg.sender, VETH, amount, leverage);
-    }
-
-    // /**
-    //  * @notice deposit platform coin into order proxy
-    //  * @param borrowAmount amount of platform coin to borrow
-    //  * @param leverage borrow amount multiply factor
-    //  */
-    // function borrowLeverage(uint borrowAmount, uint8 leverage) public returns (uint) {
-    //     require(orderProxy != address(0), "orderProxy not set");
-    //     return borrowLeverageInternal(borrowAmount, leverage);
-    // }
-
-    /**
-     * @dev combined borrowLeverage and callOrderProxy
-     * @param borrowAmount amount of erc20 token to borrow
-     * @param leverage borrow amount multiply factor
-     * @param signature the selector of Order Proxy function
-     * @param order calldata for createOrderXXX
-     */
-    function borrowAndCall(uint borrowAmount, uint8 leverage, bytes4 signature, bytes calldata order) external payable returns (bytes memory) {
-        uint ret = borrowLeverageInternal(borrowAmount, leverage);
-        require(ret == uint(MathError.NO_ERROR), "borrow error");
-        (bool success, bytes memory returnData) = callOrderProxyInternal(signature, order);
-        require(success, _getRevertMsg(returnData));
-        return returnData;
-    }
-
-    /**
-     * @notice repay leverage and borrow
-     * @param borrower the account with the debt being payed off
-     * @param repayAmount the amount to repay
-     * @param expectLeverageAmount borrowed amount of leverage for once trading
-     * @param realLeverageAmount real repay amount of leverage for once trading
-     */
-    function repayLeverageAndBorrow(address borrower, uint repayAmount, uint expectLeverageAmount, uint realLeverageAmount) external payable returns (uint err, uint result) {
-        (, uint total) = addUInt(repayAmount, realLeverageAmount);
-        require(total == msg.value && total > 0, "repay amount invalid");
-        if (realLeverageAmount > 0) {
-        (err, result) = repayLeverageInternal(borrower, expectLeverageAmount, realLeverageAmount);
-            requireNoError(err, "repayLeverage failed");
-        }
-        if(repayAmount > 0) {
-        (err, result) = repayBorrowBehalfInternal(borrower, repayAmount);
-            requireNoError(err, "repayBorrow failed");
-        }
-    }
-
-    /**
      * @notice Sender mint tokens for receiver
      * @param receiver the account being minted for
      * @return uint 0=success, otherwise a failure (see ErrorReporter.sol for details)
