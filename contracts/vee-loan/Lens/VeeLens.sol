@@ -284,5 +284,3 @@ contract VeeLens {
         }
     }
 }
-
-

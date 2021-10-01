@@ -290,9 +290,9 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
      */
     function borrowBalanceStoredInternal(address account) internal view returns (MathError, uint) {
         /* Note: we do not assert that the market is up to date */
-        // MathError mathErr;
-        // uint principalTimesIndex;
-        // uint result;
+        MathError mathErr;
+        uint principalTimesIndex;
+        uint result;
 
         /* Get borrowBalance and borrowIndex */
         BorrowSnapshot storage borrowSnapshot = accountBorrows[account];
@@ -305,59 +305,20 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
         }
 
 
-        return accrueBalanceInternal(borrowSnapshot.principal, borrowIndex, borrowSnapshot.interestIndex);
         /* Calculate new borrow balance using the interest index:
          *  recentBorrowBalance = borrower.borrowBalance * market.borrowIndex / borrower.borrowIndex
          */
-        // (mathErr, principalTimesIndex) = mulUInt(borrowSnapshot.principal, borrowIndex);
-        // if (mathErr != MathError.NO_ERROR) {
-        //     return (mathErr, 0);
-        // }
-
-        // (mathErr, result) = divUInt(principalTimesIndex, borrowSnapshot.interestIndex);
-        // if (mathErr != MathError.NO_ERROR) {
-        //     return (mathErr, 0);
-        // }
-
-        // return (MathError.NO_ERROR, result);
-    }
-
-    function accrueBalanceInternal(uint balance, uint actionIndex, uint interestIndex) internal pure returns (MathError, uint) {
-        MathError mathErr;
-        uint principalTimesIndex;
-        uint result;
-
-        (mathErr, principalTimesIndex) = mulUInt(balance, actionIndex);
+        (mathErr, principalTimesIndex) = mulUInt(borrowSnapshot.principal, borrowIndex);
         if (mathErr != MathError.NO_ERROR) {
             return (mathErr, 0);
         }
 
-        (mathErr, result) = divUInt(principalTimesIndex, interestIndex);
+        (mathErr, result) = divUInt(principalTimesIndex, borrowSnapshot.interestIndex);
         if (mathErr != MathError.NO_ERROR) {
             return (mathErr, 0);
         }
-        // uint principalTimesIndex = balance * actionIndex;
-        // uint result = principalTimesIndex / interestIndex;
 
         return (MathError.NO_ERROR, result);
-    }
-
-    function deltaAccrueFeeInternal (uint balance, uint actionIndex, uint interestIndex) internal pure returns (MathError, uint) {
-        MathError mathErr;
-        uint accrueBalance;
-        uint deltaInterestFee;
-
-        (mathErr, accrueBalance) = accrueBalanceInternal(balance, actionIndex, interestIndex);
-        if (mathErr != MathError.NO_ERROR) {
-            return (mathErr, 0);
-        }
-        // (mathErr, deltaInterestFee) = subUInt(accrueBalance, balance);
-        // if (mathErr != MathError.NO_ERROR) {
-        //     return (mathErr, 0);
-        // }
-        deltaInterestFee = accrueBalance - balance;
-
-        return (MathError.NO_ERROR, deltaInterestFee);
     }
 
     /**
@@ -1471,7 +1432,6 @@ abstract contract CToken is CTokenInterface, Exponential, TokenErrorReporter {
      *  If caller has checked protocol's balance, and verified it is >= amount, this should not revert in normal conditions.
      */
     function doTransferOut(address payable to, uint amount) internal virtual;
-
 
     /*** Reentrancy Guard ***/
 
