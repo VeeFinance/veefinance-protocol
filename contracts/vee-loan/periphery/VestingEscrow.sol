@@ -47,12 +47,14 @@ contract VestingEscrow is Initializable, OwnableUpgradeable{
         __Ownable_init();
     }
    
+    // deposit Vee into VestingEscrow
     function deposit(address account, uint amount) nonReentrant external {
         vestingToken.safeTransferFrom(msg.sender, address(this), amount);
         lockingBalances[account] += amount;
         emit Deposit(account,msg.sender, amount, lockingBalances[account]);
     }
 
+    // start a new linear release with slot and amount
     function addSchedule(uint8 slot, uint amount) nonReentrant external {
         require(lockingBalances[msg.sender] >= amount, "insufficient amount");
         VestingSchedule memory vestingSchedule = _addSchedule(msg.sender, slot, amount, block.timestamp, block.timestamp + 90 days, 1e18);
@@ -69,10 +71,12 @@ contract VestingEscrow is Initializable, OwnableUpgradeable{
         return vestingSchedules[account][slot];
     }
 
+    // get schedule count
     function getScheduleSize(address account) external view returns(uint8) {
         return uint8(vestingSchedules[account].length);
     }
 
+    // revoke a schedule which is running to release a slot
     function revokeSchedule(uint8 slot) nonReentrant external {
         require(vestingSchedules[msg.sender][slot].totalAmount > 0,"slot empty");
         (uint amountUnlocked, uint amountLocking) = _revokeSchedule(msg.sender, slot);
@@ -94,6 +98,7 @@ contract VestingEscrow is Initializable, OwnableUpgradeable{
         return (amountUnlocked, amountLocking);
     }
     
+    // withdraw available unlocked Vee from all slot and unlocked Vee from revoked schedule
     function withdrawVestedTokens() nonReentrant external {
         require(block.timestamp > lastWithdrawTime[msg.sender] + 3600, "withdraw too frequent");
         VestingSchedule[] storage schedules = vestingSchedules[msg.sender];
@@ -118,6 +123,7 @@ contract VestingEscrow is Initializable, OwnableUpgradeable{
         lastWithdrawTime[msg.sender] = block.timestamp;
     }
 
+    // estimate unlocked tokens from all pools
     function estimateVested(VestingSchedule memory vestingSchedule) internal view returns(uint) {
         if (block.timestamp >= vestingSchedule.endTimestamp || vestingSchedule.endTimestamp == 0) {
             return vestingSchedule.totalAmount;
@@ -129,6 +135,7 @@ contract VestingEscrow is Initializable, OwnableUpgradeable{
         return vestedAmount;
     }
 
+    // estimate unlocked tokens from all pools and unlocked Vee from revoked schedule
     function estimateWithdrawable(address account) external view returns(uint) {
         VestingSchedule[] storage schedules = vestingSchedules[account];
         uint withdrawable = unlockedBalances[account];
@@ -143,21 +150,4 @@ contract VestingEscrow is Initializable, OwnableUpgradeable{
         return withdrawable;
     }
 
-
-    function useItem(address account, uint8 slot, uint itemId) external {
-        /*
-        require(ItemManager(itemMamager).itemExists(account, itemId), "item not exist");
-        consumption = ItemManager(itemMamager).useItem()
-
-        */
-        uint accelerateFactor = 2e18;
-
-        VestingSchedule storage vestingSchedule = vestingSchedules[account][slot];
-        require(vestingSchedule.totalAmount > 0, "schedule empty");
-        require(vestingSchedule.accelerateFactor < accelerateFactor, "accelerateFactor invalid");
-        uint endTimestamp = vestingSchedule.endTimestamp;
-        (, uint amountLocking) = _revokeSchedule(account, slot);
-        VestingSchedule memory vestingScheduleNew = _addSchedule(account, slot, amountLocking, block.timestamp, endTimestamp, accelerateFactor);
-        emit UpdateSchedule(account, slot, vestingScheduleNew.startTimestamp, vestingScheduleNew.endTimestamp, vestingScheduleNew.totalAmount, msg.sender, vestingScheduleNew.accelerateFactor);
-    }
 }
