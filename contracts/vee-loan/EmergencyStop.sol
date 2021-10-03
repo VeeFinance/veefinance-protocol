@@ -23,18 +23,35 @@ contract EmergencyStop {
 		
 		CToken[] memory ctokens1 = unitroller.getAllMarkets();
 		for(uint i = 0; i < ctokens1.length; i++){
-			unitroller._setMintPaused(ctokens1[i],true);
-			unitroller._setBorrowPaused(ctokens1[i],true);
+			if(!unitroller.mintGuardianPaused(address(ctokens1[i]))){
+				unitroller._setMintPaused(ctokens1[i],true);
+			}
+			if(!unitroller.borrowGuardianPaused(address(ctokens1[i]))){
+				unitroller._setBorrowPaused(ctokens1[i],true);
+			}
 		}
 		CToken[] memory ctokens2 = stableUintroller.getAllMarkets();
 		for(uint i = 0; i < ctokens2.length; i++){
-			stableUintroller._setMintPaused(ctokens2[i],true);
-			stableUintroller._setBorrowPaused(ctokens2[i],true);
+			if(!stableUintroller.mintGuardianPaused(address(ctokens2[i]))){
+				stableUintroller._setMintPaused(ctokens2[i],true);
+			}
+			if(!stableUintroller.borrowGuardianPaused(address(ctokens2[i]))){
+				stableUintroller._setBorrowPaused(ctokens2[i],true);
+			}
+			
 		}
-		unitroller._setTransferPaused(true);
-		unitroller._setSeizePaused(true);
-		stableUintroller._setTransferPaused(true);
-		stableUintroller._setSeizePaused(true);
+		if(!unitroller.transferGuardianPaused()){
+			unitroller._setTransferPaused(true);
+		}
+		if(!unitroller.seizeGuardianPaused()){
+			unitroller._setSeizePaused(true);
+		}
+		if(!stableUintroller.transferGuardianPaused()){
+			stableUintroller._setTransferPaused(true);
+		}
+		if(!stableUintroller.seizeGuardianPaused()){
+			stableUintroller._setSeizePaused(true);
+		}	
 	}
 
 }
