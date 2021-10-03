@@ -48,6 +48,7 @@ contract ChainlinkAnchoredView is IPriceOracle {
     }
 
     function priceInternal(ChainlinkTokenConfig memory config) internal view returns (int256) {
+        require(config.cToken != address(0), "config not found");
         if (config.priceSource == PriceSource.FIXED_USD) {
             return 1e8;
         }
