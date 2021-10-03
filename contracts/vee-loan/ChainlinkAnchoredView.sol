@@ -52,7 +52,9 @@ contract ChainlinkAnchoredView is IPriceOracle {
         if (config.priceSource == PriceSource.FIXED_USD) {
             return 1e8;
         }
-        return IEACAggregatorProxy(config.ChainlinkPair).latestAnswer();
+        int256 chainlinkResponse = IEACAggregatorProxy(config.ChainlinkPair).latestAnswer();
+        require(chainlinkResponse > 0, "price error");
+        return chainlinkResponse;
     }
 
     function getUnderlyingPrice(address cToken) external override view returns (int256) {
