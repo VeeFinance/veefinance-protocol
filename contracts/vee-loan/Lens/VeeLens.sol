@@ -72,7 +72,7 @@ contract VeeLens {
         address underlyingAssetAddress;
         uint underlyingDecimals;
 
-        if (compareStrings(cToken.symbol(), "cETH")) {
+        if (compareStrings(cToken.symbol(), "veAVAX")) {
             underlyingAssetAddress = address(0);
             underlyingDecimals = 18;
         } else {
@@ -124,7 +124,7 @@ contract VeeLens {
         uint tokenBalance;
         uint tokenAllowance;
 
-        if (compareStrings(cToken.symbol(), "cETH")) {
+        if (compareStrings(cToken.symbol(), "veAVAX")) {
             tokenBalance = account.balance;
             tokenAllowance = account.balance;
         } else {
